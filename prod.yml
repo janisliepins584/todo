@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  client:
+    image: prod-todo-client-image:latest
+    build:
+      context: todo-client
+      target: prod
+    container_name: prod-todo-client
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      rest:
+        condition: service_healthy
+    networks:
+      - prod-todo-net
+    environment:
+      VITE_PORT: 80
+    volumes:
+      - /home/ubuntu/.htpasswd:/etc/nginx/.htpasswd
+      - /home/ubuntu/privkey.pem:/etc/nginx/ssl/live/todo.jlinden.net/privkey.pem
+      - /home/ubuntu/fullchain.pem:/etc/nginx/ssl/live/todo.jlinden.net/fullchain.pem
+
+  rest:
+    image: prod-todo-rest-image:latest
+    build:
+      context: todo-rest
+      target: prod
+    container_name: prod-todo-rest
+    restart: always
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --spider --quiet http://localhost:8081/actuator/health || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    environment:
+      POSTGRES_DB: todo_db
+      SPRING_PROFILES_ACTIVE: prod
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - prod-todo-net
+
+  db:
+    image: postgres:15.3-alpine3.18
+    container_name: prod-todo-db
+    restart: always
+    environment:
+      POSTGRES_DB: todo_db
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - prod-db-data:/var/lib/postgresql/data
+    networks:
+      - prod-todo-net
+
+volumes:
+  prod-db-data:
+networks:
+  prod-todo-net:
